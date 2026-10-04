@@ -37,7 +37,7 @@ async function storeChunks(documentId: string, text: string) {
     const batch = parts.slice(i, i + 64);
     const vecs = await embed(batch);
     for (let j = 0; j < batch.length; j++)
-      await db.query(`INSERT INTO chunks (document_id, content, embedding) VALUES ($1,$2,$3::vector)`, [documentId, batch[j], vecs[j]]);
+      await db.query(`INSERT INTO chunks (document_id, content, embedding) VALUES ($1,$2,$3::jsonb)`, [documentId, batch[j], vecs[j]]);
   }
 }
 
@@ -55,7 +55,7 @@ ${text.slice(0, 60000)}`);
     const q = qs[i];
     await db.query(
       `INSERT INTO pq_questions (document_id, course_id, lecturer_id, topic_id, section, position, q_type, marks, cognitive, command_verb, text, embedding)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::vector)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb)`,
       [documentId, o.courseId, o.lecturerId ?? null, topics.find((t) => t.title === q.topic)?.id ?? null,
        q.section, q.position, q.q_type, q.marks, q.cognitive, q.command_verb, q.text, vecs[i]]);
   }

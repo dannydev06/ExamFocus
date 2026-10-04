@@ -30,12 +30,20 @@ export async function generateExam(o: { userId: string; courseId: string; lectur
   // 2. Retrieve the user's own material for each topic
   const vecs = await embed(uniq.map((t) => t.title));
   const context: Record<string, { id: string; content: string }[]> = {};
+  const { rows: all } = await db.query(
+    `SELECT c.id, c.content, c.embedding FROM chunks c JOIN documents d ON d.id=c.document_id
+     WHERE d.user_id=$1 AND d.course_id=$2 AND d.status='ready'`, [o.userId, o.courseId]);
+  const cos = (a: number[], b: number[]) => {
+    let d = 0, x = 0, y = 0;
+    for (let k = 0; k < a.length; k++) { d += a[k] * b[k]; x += a[k] * a[k]; y += b[k] * b[k]; }
+    return d / (Math.sqrt(x * y) || 1);
+  };
   for (let i = 0; i < uniq.length; i++) {
-    const { rows } = await db.query(
-      `SELECT c.id, c.content FROM chunks c JOIN documents d ON d.id=c.document_id
-       WHERE d.user_id=$1 AND d.course_id=$2 AND d.status='ready'
-       ORDER BY c.embedding <=> $3::vector LIMIT 4`, [o.userId, o.courseId, vecs[i]]);
-    context[uniq[i].id] = rows;
+    const v: number[] = JSON.parse(vecs[i]);
+    context[uniq[i].id] = all
+      .map((c) => ({ id: c.id, content: c.content, s: cos(v, c.embedding) }))
+      .sort((p, q) => q.s - p.s).slice(0, 4)
+      .map(({ id, content }) => ({ id, content }));
   }
 
   // 3. Generate in the lecturer's style, grounded in retrieved chunks

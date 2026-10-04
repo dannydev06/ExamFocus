@@ -1,6 +1,4 @@
--- PQ exam-prep platform: Postgres + pgvector schema sketch
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- PQ exam-prep platform: plain Postgres schema
 
 CREATE TYPE doc_kind AS ENUM ('past_question', 'note', 'textbook', 'ccmas');
 CREATE TYPE doc_status AS ENUM ('uploaded', 'parsing', 'ready', 'failed');
@@ -64,9 +62,8 @@ CREATE TABLE chunks (
   topic_id uuid REFERENCES ccmas_topics(id),
   page int,
   content text NOT NULL,
-  embedding vector(1536)            -- match your embedding model's dimension
+  embedding jsonb                   -- array of floats, compared in the app
 );
-CREATE INDEX ON chunks USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX ON chunks (document_id);
 
 -- Questions parsed out of past papers
@@ -83,7 +80,7 @@ CREATE TABLE pq_questions (
   cognitive cog_level,
   command_verb text,                -- "differentiate", "explain", "calculate"
   text text NOT NULL,
-  embedding vector(1536)
+  embedding jsonb
 );
 CREATE INDEX ON pq_questions (course_id, lecturer_id);
 

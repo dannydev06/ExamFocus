@@ -6,7 +6,7 @@ export const db = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const claude = new Anthropic();
 const MODEL = process.env.CLAUDE_MODEL ?? "claude-sonnet-5-5";
 
-// Returns pgvector-ready strings like "[0.1,0.2,...]"
+// Returns JSON strings like "[0.1,0.2,...]" (stored as jsonb)
 export async function embed(texts: string[]): Promise<string[]> {
   const r = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
