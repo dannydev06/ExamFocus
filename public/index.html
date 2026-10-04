@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PQ Prep</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--card:#f5f5f4;--acc:#2d5be3;--ok:#1a7f37;--bad:#c62828}
+@media(prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mut:#999;--card:#222;--acc:#4f7cff;--ok:#4cc26b;--bad:#ff7b72}}
+body{font:16px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--fg);max-width:720px;margin:0 auto;padding:16px}
+section{background:var(--card);border-radius:12px;padding:16px;margin:12px 0}
+input,select,textarea,button{font:inherit;width:100%;padding:10px;margin:4px 0 10px;border-radius:8px;border:1px solid #8884;background:var(--bg);color:var(--fg);box-sizing:border-box}
+button{background:var(--acc);color:#fff;border:0;cursor:pointer}button:disabled{opacity:.5}
+label.opt{display:flex;gap:8px;align-items:flex-start;padding:6px 0}label.opt input{width:auto;margin:5px 0}
+.bar{height:8px;background:var(--acc);border-radius:4px;margin-bottom:6px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.mut{color:var(--mut);font-size:14px}
+</style></head><body>
+<h1>PQ Prep</h1>
+
+<section>
+  <label>User ID <input id="uid" placeholder="uuid from the users table"></label>
+  <label>Course <select id="course"></select></label>
+  <label>Lecturer <select id="lect"><option value="">Any / unknown</option></select></label>
+  <div id="heat"></div>
+</section>
+
+<section>
+  <h3>Upload material (PDF)</h3>
+  <select id="kind">
+    <option value="past_question">Past questions</option><option value="note">Notes</option>
+    <option value="textbook">Textbook</option><option value="ccmas">CCMAS</option>
+  </select>
+  <input id="year" type="number" placeholder="Exam year (past questions only)">
+  <input id="file" type="file" accept="application/pdf">
+  <button id="up">Upload</button><div id="upstatus" class="mut"></div>
+</section>
+
+<section>
+  <h3>Mock exam</h3>
+  <select id="diff"><option>easy</option><option selected>medium</option><option>hard</option></select>
+  <input id="count" type="number" value="10" min="3" max="30">
+  <button id="go">Generate exam</button>
+</section>
+
+<section id="exam" hidden></section>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const JSONH = { "Content-Type": "application/json" };
+const api = async (path, opts = {}) => {
+  const r = await fetch(path, { ...opts, headers: { "x-user-id": $("uid").value, ...(opts.headers || {}) } });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+};
+const run = (btn, fn) => async () => { btn.disabled = true; try { await fn(); } catch (e) { alert(e.message); } btn.disabled = false; };
+const show = (html) => { $("exam").hidden = false; $("exam").innerHTML = html; $("exam").scrollIntoView(); };
+let exam = null;
+
+$("uid").value = localStorage.getItem("uid") || "";
+$("uid").onchange = () => localStorage.setItem("uid", $("uid").value);
+
+async function heat() {
+  if (!$("course").value) return;
+  const rows = await api(`/courses/${$("course").value}/heatmap`);
+  const max = Math.max(1, ...rows.map((r) => r.questions));
+  $("heat").innerHTML = "<h3>Topics tested most</h3>" + rows.map((r) =>
+    `<div class="mut">${esc(r.title)} · ${r.questions}</div><div class="bar" style="width:${(r.questions / max) * 100}%"></div>`).join("");
+}
+$("course").onchange = () => heat().catch((e) => alert(e.message));
+
+(async () => {
+  const [cs, ls] = await Promise.all([api("/courses"), api("/lecturers")]);
+  $("course").innerHTML = cs.map((c) => `<option value="${c.id}">${esc(c.code)} – ${esc(c.title)}</option>`).join("");
+  $("lect").innerHTML += ls.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join("");
+  await heat();
+})().catch((e) => alert(e.message));
+
+$("up").onclick = run($("up"), async () => {
+  const f = $("file").files[0];
+  if (!f) throw new Error("Choose a PDF first.");
+  const fd = new FormData();
+  fd.append("courseId", $("course").value); fd.append("kind", $("kind").value);
+  fd.append("lecturerId", $("lect").value); fd.append("year", $("year").value); fd.append("file", f);
+  $("upstatus").textContent = "Processing… this can take a minute.";
+  try { await api("/documents", { method: "POST", body: fd }); $("upstatus").textContent = "Done ✓"; await heat(); }
+  catch (e) { $("upstatus").textContent = ""; throw e; }
+});
+
+const L = (i) => String.fromCharCode(65 + i);
+const qHtml = (q) => `<div style="margin:16px 0"><b>Q${q.position}</b> <span class="mut">(${q.marks} marks)</span><p>${esc(q.text)}</p>` +
+  (q.q_type === "mcq" && q.options
+    ? q.options.map((o, i) => `<label class="opt"><input type="radio" name="${q.id}" value="${L(i)}"><span>${L(i)}. ${esc(String(o).replace(/^\(?[A-Da-d][).:]\s*/, ""))}</span></label>`).join("")
+    : `<textarea name="${q.id}" rows="4" placeholder="Your answer"></textarea>`) + `</div>`;
+
+$("go").onclick = run($("go"), async () => {
+  const g = await api("/exams", { method: "POST", headers: JSONH, body: JSON.stringify({
+    courseId: $("course").value, lecturerId: $("lect").value || null, difficulty: $("diff").value, count: Number($("count").value) }) });
+  const qs = await api(`/exams/${g.examId}`);
+  exam = { id: g.examId, qs };
+  const warn = [];
+  if (Number(g.confidence) < 0.6) warn.push("Low style confidence: upload more past papers from this lecturer.");
+  if (g.unverified) warn.push(`${g.unverified} answer(s) couldn't be verified against your material.`);
+  show(`<p class="mut">${esc(warn.join(" "))}</p>` + qs.map(qHtml).join("") + `<button id="sub">Submit</button>`);
+  $("sub").onclick = run($("sub"), submit);
+});
+
+async function submit() {
+  const answers = exam.qs.map((q) => {
+    const el = document.querySelector(`[name="${q.id}"]:checked`) || document.querySelector(`textarea[name="${q.id}"]`);
+    return { examQuestionId: q.id, response: el ? el.value : "" };
+  });
+  const r = await api(`/exams/${exam.id}/submit`, { method: "POST", headers: JSONH, body: JSON.stringify({ answers }) });
+  show(`<h2>${r.score} / ${r.total}</h2>` + r.results.map((x) =>
+    `<div style="margin:16px 0"><b>Q${x.position}</b> <span class="${x.score >= x.max ? "ok" : "bad"}">${x.score}/${x.max}</span>
+     <p class="mut">Your answer: ${esc(x.response || "—")}</p><p>${esc(x.feedback)}</p>
+     <p><b>Model answer:</b> ${esc(x.answer)}</p><p class="mut">${esc(x.explanation)}</p></div>`).join(""));
+}
+</script>
+</body></html>
