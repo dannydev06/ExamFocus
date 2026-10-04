@@ -5,6 +5,7 @@ import { ingest } from "./ingest.js";
 import { buildStyleProfile } from "./style.js";
 import { generateExam } from "./generate.js";
 import { submitAttempt } from "./mark.js";
+import { dashRoutes } from "./dash.js";
 
 const app = express();
 app.use(express.json());
@@ -59,5 +60,7 @@ app.get("/courses", h(async (_req, res) => {
 app.get("/lecturers", h(async (_req, res) => {
   res.json((await db.query(`SELECT id, name FROM lecturers ORDER BY name`)).rows);
 }));
+
+dashRoutes(app, h, uid);
 
 app.listen(3000, () => console.log("PQ prep API on :3000"));
